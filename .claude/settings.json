@@ -6,11 +6,16 @@
         "hooks": [
           {
             "type": "agent",
-            "prompt": "You are a senior code auditor. Review all recently modified files in this session for this Agar.io clone built with Next.js, Phaser.js, and SpacetimeDB. Check for: 1) TypeScript errors or `any` usage, 2) SpacetimeDB module correctness (reducers, table definitions), 3) Phaser.js usage and game loop correctness, 4) Next.js App Router conventions (server vs client components), 5) Real-time sync logic and race conditions, 6) Missing error handling. Output either APPROVED or a numbered list of issues Claude Code must fix before this task is complete. Be specific with file paths and line numbers.",
             "model": "claude-opus-4-6"
           }
         ]
       }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx next lint)"
     ]
   }
 }

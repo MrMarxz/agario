@@ -74,12 +74,15 @@ A real-time multiplayer browser game (Agar.io clone) built with:
 
 ## Audit Workflow
 
-When you believe a task is complete, **do not mark it as done**. The Stop hook will automatically trigger an Opus audit. Opus will either:
+After completing any task or phase, Claude Code must follow this loop before considering the work done:
 
-- Output `APPROVED` — task is complete
-- Output a numbered list of issues — fix all issues and the hook will re-audit
+1. Run `npx tsc --noEmit` and fix any TypeScript errors
+2. Use the Task tool to invoke a subagent with model `claude-opus-4-6` and the following prompt:
+   > "You are a senior code auditor. Review all recently modified files in this session for this Agar.io clone built with Next.js, Phaser.js, and SpacetimeDB. Check for: 1) TypeScript errors or `any` usage, 2) SpacetimeDB module correctness (reducers, table definitions), 3) Phaser.js usage and game loop correctness, 4) Next.js App Router conventions (server vs client components), 5) Real-time sync logic and race conditions, 6) Missing error handling. Output either STATUS: APPROVED or STATUS: ISSUES followed by a numbered list of problems with file paths and line numbers."
+3. If Opus returns `STATUS: ISSUES` — fix every listed issue and repeat from step 1
+4. Only when Opus returns `STATUS: APPROVED` update ROADMAP.md and consider the task complete
 
-Only once Opus outputs `APPROVED` is the task considered done.
+The Stop hook in `.claude/settings.json` acts as a safety net but Claude Code must actively invoke the audit itself using the Task tool before stopping.
 
 ---
 
