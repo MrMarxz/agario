@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type PhaserType from "phaser";
+import { connectToSpacetimeDB, cleanupSpacetimeDB } from "@/game/stdbClient";
 
 type GameCanvasProps = {
   playerName: string;
@@ -12,33 +13,52 @@ export default function GameCanvas({ playerName }: GameCanvasProps) {
 
   useEffect(() => {
     let game: PhaserType.Game | null = null;
+    let cancelled = false;
 
     const initGame = async () => {
-      const Phaser = (await import("phaser")).default;
-      const { GameScene } = await import("@/game/scenes/GameScene");
+      try {
+        connectToSpacetimeDB(playerName);
 
-      game = new Phaser.Game({
-        type: Phaser.AUTO,
-        parent: containerRef.current ?? undefined,
-        backgroundColor: "#1a1a2e",
-        scale: {
-          mode: Phaser.Scale.RESIZE,
-          autoCenter: Phaser.Scale.CENTER_BOTH,
-        },
-      });
+        const Phaser = (await import("phaser")).default;
+        if (cancelled) return;
 
-      game.events.once("ready", () => {
-        game?.scene.add("GameScene", GameScene, true, { playerName });
-      });
+        const { GameScene } = await import("@/game/scenes/GameScene");
+        if (cancelled) return;
+
+        game = new Phaser.Game({
+          type: Phaser.AUTO,
+          parent: containerRef.current ?? undefined,
+          backgroundColor: "#1a1a2e",
+          scale: {
+            mode: Phaser.Scale.RESIZE,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+          },
+        });
+
+        game.events.once("ready", () => {
+          if (cancelled) {
+            game?.destroy(true);
+            game = null;
+            return;
+          }
+          game?.scene.add("GameScene", GameScene, true, { playerName });
+        });
+      } catch (err: unknown) {
+        console.error("[GameCanvas] Failed to initialize game:", err);
+      }
     };
 
     void initGame();
 
     return () => {
+      cancelled = true;
+      cleanupSpacetimeDB();
       game?.destroy(true);
       game = null;
     };
   }, [playerName]);
 
-  return <div ref={containerRef} className="h-screen w-screen overflow-hidden" />;
+  return (
+    <div ref={containerRef} className="h-screen w-screen overflow-hidden" />
+  );
 }

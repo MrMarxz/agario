@@ -1,28 +1,50 @@
 import Phaser from "phaser";
+import {
+  playerMap,
+  foodMap,
+  pendingFoodEats,
+  getConnection,
+  getLocalIdentityHex,
+} from "@/game/stdbClient";
 
 const WORLD_SIZE = 3000;
 const GRID_SIZE = 50;
-const FOOD_COUNT = 200;
 const FOOD_RADIUS = 6;
 const INITIAL_MASS = 100;
 const BASE_SPEED = 150;
-
-const FOOD_COLORS = [
-  0xff6b6b, 0x4ecdc4, 0x45b7d1, 0x96ceb4, 0xffeaa7, 0xdda0dd, 0xff7675,
-  0x74b9ff, 0xa29bfe, 0xfd79a8,
-];
+const POSITION_SEND_INTERVAL_MS = 50;
 
 function massToRadius(mass: number): number {
   return Math.sqrt(mass) * 2;
 }
 
+type PlayerGfx = {
+  circle: Phaser.GameObjects.Arc;
+  nameText: Phaser.GameObjects.Text;
+};
+
 export class GameScene extends Phaser.Scene {
   private playerName = "Player";
-  private playerMass = INITIAL_MASS;
-  private playerRadius = massToRadius(INITIAL_MASS);
-  private playerCircle!: Phaser.GameObjects.Arc;
-  private nameText!: Phaser.GameObjects.Text;
-  private foodPellets: Phaser.GameObjects.Arc[] = [];
+
+  // Local player state (optimistic client-side prediction)
+  private localX = WORLD_SIZE / 2;
+  private localY = WORLD_SIZE / 2;
+  private localMass = INITIAL_MASS;
+  private localRadius = massToRadius(INITIAL_MASS);
+  // True after first server position sync — prevents continuous snap reconciliation
+  private serverPositionInitialized = false;
+
+  // Local player graphics
+  private localCircle!: Phaser.GameObjects.Arc;
+  private localNameText!: Phaser.GameObjects.Text;
+
+  // Remote players graphics (keyed by identity hex string)
+  private remoteGfx = new Map<string, PlayerGfx>();
+
+  // Food graphics (keyed by food id bigint)
+  private foodGfx = new Map<bigint, Phaser.GameObjects.Arc>();
+
+  private lastPositionSentAt = 0;
 
   constructor() {
     super({ key: "GameScene" });
@@ -31,27 +53,33 @@ export class GameScene extends Phaser.Scene {
   init(data: object): void {
     const d = data as Partial<{ playerName: string }>;
     this.playerName = d.playerName ?? "Player";
-    this.playerMass = INITIAL_MASS;
-    this.playerRadius = massToRadius(INITIAL_MASS);
-    this.foodPellets = [];
+    this.localX = WORLD_SIZE / 2;
+    this.localY = WORLD_SIZE / 2;
+    this.localMass = INITIAL_MASS;
+    this.localRadius = massToRadius(INITIAL_MASS);
+    this.remoteGfx = new Map();
+    this.foodGfx = new Map();
+    this.lastPositionSentAt = 0;
+    this.serverPositionInitialized = false;
   }
 
   create(): void {
     this.drawGrid();
     this.drawBoundary();
-    this.spawnFood();
-    this.createPlayer();
+    this.createLocalPlayer();
 
     this.cameras.main.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
-    this.cameras.main.startFollow(this.playerCircle, false, 0.1, 0.1);
+    this.cameras.main.startFollow(this.localCircle, false, 0.1, 0.1);
   }
 
-  update(_time: number, delta: number): void {
+  update(time: number, delta: number): void {
     this.movePlayerTowardMouse(delta);
+    this.syncFromServer();
     this.checkFoodCollisions();
-    this.nameText.setPosition(
-      this.playerCircle.x,
-      this.playerCircle.y - this.playerRadius - 10,
+    this.sendPositionUpdate(time);
+    this.localNameText.setPosition(
+      this.localCircle.x,
+      this.localCircle.y - this.localRadius - 10,
     );
   }
 
@@ -72,37 +100,30 @@ export class GameScene extends Phaser.Scene {
     graphics.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE);
   }
 
-  private spawnFood(): void {
-    for (let i = 0; i < FOOD_COUNT; i++) {
-      const x = Phaser.Math.Between(20, WORLD_SIZE - 20);
-      const y = Phaser.Math.Between(20, WORLD_SIZE - 20);
-      const colorIndex = Phaser.Math.Between(0, FOOD_COLORS.length - 1);
-      const color = FOOD_COLORS[colorIndex] ?? 0xffffff;
-      const pellet = this.add.circle(x, y, FOOD_RADIUS, color);
-      this.foodPellets.push(pellet);
-    }
-  }
-
-  private createPlayer(): void {
-    const startX = WORLD_SIZE / 2;
-    const startY = WORLD_SIZE / 2;
-
-    this.playerCircle = this.add.circle(
-      startX,
-      startY,
-      this.playerRadius,
+  private createLocalPlayer(): void {
+    this.localCircle = this.add.circle(
+      this.localX,
+      this.localY,
+      this.localRadius,
       0x4a90d9,
     );
-    this.playerCircle.setStrokeStyle(2, 0x2c5f8a);
+    this.localCircle.setStrokeStyle(2, 0x2c5f8a);
+    this.localCircle.setDepth(10);
 
-    this.nameText = this.add
-      .text(startX, startY - this.playerRadius - 10, this.playerName, {
-        fontSize: "16px",
-        color: "#ffffff",
-        stroke: "#000000",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5, 1);
+    this.localNameText = this.add
+      .text(
+        this.localX,
+        this.localY - this.localRadius - 10,
+        this.playerName,
+        {
+          fontSize: "16px",
+          color: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+        },
+      )
+      .setOrigin(0.5, 1)
+      .setDepth(11);
   }
 
   private movePlayerTowardMouse(delta: number): void {
@@ -110,45 +131,153 @@ export class GameScene extends Phaser.Scene {
     const worldX = pointer.worldX;
     const worldY = pointer.worldY;
 
-    const dx = worldX - this.playerCircle.x;
-    const dy = worldY - this.playerCircle.y;
+    const dx = worldX - this.localCircle.x;
+    const dy = worldY - this.localCircle.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > 5) {
-      const speed = BASE_SPEED / Math.sqrt(this.playerMass / INITIAL_MASS);
+      const speed = BASE_SPEED / Math.sqrt(this.localMass / INITIAL_MASS);
       const dt = delta / 1000;
       const vx = (dx / dist) * speed;
       const vy = (dy / dist) * speed;
 
-      this.playerCircle.x = Phaser.Math.Clamp(
-        this.playerCircle.x + vx * dt,
-        this.playerRadius,
-        WORLD_SIZE - this.playerRadius,
+      this.localX = Phaser.Math.Clamp(
+        this.localCircle.x + vx * dt,
+        this.localRadius,
+        WORLD_SIZE - this.localRadius,
       );
-      this.playerCircle.y = Phaser.Math.Clamp(
-        this.playerCircle.y + vy * dt,
-        this.playerRadius,
-        WORLD_SIZE - this.playerRadius,
+      this.localY = Phaser.Math.Clamp(
+        this.localCircle.y + vy * dt,
+        this.localRadius,
+        WORLD_SIZE - this.localRadius,
       );
+
+      this.localCircle.setPosition(this.localX, this.localY);
+    }
+  }
+
+  private syncFromServer(): void {
+    const localIdentityHex = getLocalIdentityHex();
+
+    // Pull latest mass/radius/color and reconcile position for local player from server
+    if (localIdentityHex) {
+      const serverPlayer = playerMap.get(localIdentityHex);
+      if (serverPlayer) {
+        // On first server data, snap to server-assigned spawn position
+        if (!this.serverPositionInitialized) {
+          this.serverPositionInitialized = true;
+          this.localX = serverPlayer.x;
+          this.localY = serverPlayer.y;
+          this.localCircle.setPosition(this.localX, this.localY);
+        }
+        if (serverPlayer.mass !== this.localMass) {
+          this.localMass = serverPlayer.mass;
+          this.localRadius = massToRadius(serverPlayer.mass);
+          this.localCircle.setRadius(this.localRadius);
+        }
+        // Sync server-assigned color
+        this.localCircle.setFillStyle(serverPlayer.color);
+      }
+    }
+
+    // Sync remote players
+    const knownRemoteIds = new Set(this.remoteGfx.keys());
+
+    for (const [identityHex, player] of playerMap) {
+      if (identityHex === localIdentityHex) continue;
+
+      knownRemoteIds.delete(identityHex);
+
+      const existing = this.remoteGfx.get(identityHex);
+
+      if (existing) {
+        existing.circle.setPosition(player.x, player.y);
+        existing.circle.setRadius(player.radius);
+        existing.circle.setFillStyle(player.color);
+        existing.nameText.setPosition(player.x, player.y - player.radius - 10);
+        existing.nameText.setText(player.name);
+      } else {
+        const circle = this.add
+          .circle(player.x, player.y, player.radius, player.color)
+          .setStrokeStyle(2, 0x000000)
+          .setDepth(9);
+        const nameText = this.add
+          .text(player.x, player.y - player.radius - 10, player.name, {
+            fontSize: "14px",
+            color: "#ffffff",
+            stroke: "#000000",
+            strokeThickness: 3,
+          })
+          .setOrigin(0.5, 1)
+          .setDepth(10);
+        this.remoteGfx.set(identityHex, { circle, nameText });
+      }
+    }
+
+    // Remove graphics for disconnected players
+    for (const oldId of knownRemoteIds) {
+      const gfx = this.remoteGfx.get(oldId);
+      if (gfx) {
+        gfx.circle.destroy();
+        gfx.nameText.destroy();
+        this.remoteGfx.delete(oldId);
+      }
+    }
+
+    // Sync food pellets
+    const knownFoodIds = new Set(this.foodGfx.keys());
+
+    for (const [foodId, food] of foodMap) {
+      knownFoodIds.delete(foodId);
+      if (!this.foodGfx.has(foodId)) {
+        const pellet = this.add
+          .circle(food.x, food.y, FOOD_RADIUS, 0xff6b6b)
+          .setDepth(1);
+        this.foodGfx.set(foodId, pellet);
+      }
+    }
+
+    // Destroy graphics for deleted food
+    for (const oldFoodId of knownFoodIds) {
+      const pellet = this.foodGfx.get(oldFoodId);
+      if (pellet) {
+        pellet.destroy();
+        this.foodGfx.delete(oldFoodId);
+      }
     }
   }
 
   private checkFoodCollisions(): void {
-    for (let i = this.foodPellets.length - 1; i >= 0; i--) {
-      const food = this.foodPellets[i];
-      if (!food) continue;
+    const conn = getConnection();
+    if (!conn) return;
 
-      const dx = food.x - this.playerCircle.x;
-      const dy = food.y - this.playerCircle.y;
+    for (const [foodId, food] of foodMap) {
+      if (pendingFoodEats.has(foodId)) continue;
+
+      const dx = food.x - this.localX;
+      const dy = food.y - this.localY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (dist < this.playerRadius + FOOD_RADIUS) {
-        food.destroy();
-        this.foodPellets.splice(i, 1);
-        this.playerMass += 1;
-        this.playerRadius = massToRadius(this.playerMass);
-        this.playerCircle.setRadius(this.playerRadius);
+      if (dist < this.localRadius + FOOD_RADIUS) {
+        pendingFoodEats.add(foodId);
+        void conn.reducers.eatFood({ foodId }).catch(() => {
+          pendingFoodEats.delete(foodId);
+        });
       }
     }
+  }
+
+  private sendPositionUpdate(time: number): void {
+    if (time - this.lastPositionSentAt < POSITION_SEND_INTERVAL_MS) return;
+    this.lastPositionSentAt = time;
+
+    const conn = getConnection();
+    if (!conn) return;
+
+    void conn.reducers
+      .updatePosition({ x: this.localX, y: this.localY })
+      .catch((err: unknown) => {
+        console.warn("[SpacetimeDB] update_position failed:", err);
+      });
   }
 }

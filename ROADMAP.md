@@ -30,20 +30,21 @@ This file tracks the progress of each phase. Update the status of each phase as 
 ---
 
 ### Phase 2 — SpacetimeDB Integration
-**Status:** 🔲 Not Started
+**Status:** ✅ Complete (Opus Approved)
 
 **Goal:** Move all game state to SpacetimeDB Maincloud and sync between clients in real-time.
 
 **Scope:**
-- SpacetimeDB Rust module tables: `Player`, `FoodPellet`, `GameConfig`
-- Reducers: `spawn_player`, `update_position`, `eat_food`, `despawn_player`
-- Client connects via SpacetimeDB JS SDK to Maincloud
-- Player positions broadcast in real-time to all clients
-- Food pellets managed server-side (respawn on eat)
-- Player disconnection cleans up their cell
-- Two browser tabs show each other's cells moving and eating food
 
-**Opus Audit:** 🔲 Pending
+- SpacetimeDB Rust module tables: `Player`, `FoodPellet`, `GameConfig` ✅
+- Reducers: `spawn_player`, `update_position`, `eat_food`, `despawn_player` ✅
+- Client connects via SpacetimeDB JS SDK to Maincloud ✅
+- Player positions broadcast in real-time to all clients ✅
+- Food pellets managed server-side (respawn on eat) ✅
+- Player disconnection cleans up their cell ✅
+- Two browser tabs show each other's cells moving and eating food ✅
+
+**Opus Audit:** ✅ Approved
 
 ---
 

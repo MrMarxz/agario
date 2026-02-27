@@ -15,7 +15,40 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc --noEmit)",
-      "Bash(npx next lint)"
+      "Bash(npx next lint)",
+      "Bash(cargo search spacetimedb)",
+      "Read(//c/Users/Work/.cargo/registry/**)",
+      "Bash(cargo metadata --manifest-path \"C:/Users/Work/Desktop/GIT/AGARIO/agario/server/spacetimedb/Cargo.toml\" --no-deps)",
+      "Bash(cargo metadata --manifest-path \"C:/Users/Work/Desktop/GIT/AGARIO/agario/server/spacetimedb/Cargo.toml\" --format-version 1)",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(p[''manifest_path'']\\) for p in data[''packages''] if ''spacetimedb'' in p[''name''] and p[''name'']==''spacetimedb'']\")",
+      "Bash(cargo metadata --format-version 1)",
+      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(p[''manifest_path'']\\) for p in data[''packages''] if p[''name'']==''spacetimedb'']\")",
+      "Read(//c/Users/Work/**)",
+      "Bash(xargs grep -l \"fn update\\\\|\\\\.update\\(\")",
+      "Bash(spacetime publish --project-path ./spacetimedb agario)",
+      "Bash(spacetime publish --help)",
+      "Bash(spacetime publish -p ./spacetimedb agario)",
+      "Bash(where link.exe)",
+      "Bash(rustup target list --installed)",
+      "Bash(rustup component list --installed)",
+      "Bash(where lld-link.exe)",
+      "Bash(where lld-link)",
+      "Bash(rustup component add llvm-tools-preview)",
+      "Bash(rustup toolchain install stable-x86_64-pc-windows-gnu)",
+      "Bash(where gcc)",
+      "Bash(where x86_64-w64-mingw32-gcc)",
+      "Bash(where winget)",
+      "Bash(where scoop)",
+      "Bash(where choco)",
+      "Bash(rustup target add wasm32-unknown-unknown --toolchain stable-x86_64-pc-windows-gnu)",
+      "Bash(rustup override set stable-x86_64-pc-windows-gnu)",
+      "Bash(spacetime publish -p ./spacetimedb agario -y)",
+      "Bash(spacetime generate --lang typescript --out-dir src/module_bindings --project-path server/spacetimedb)",
+      "Bash(spacetime generate --help)",
+      "Bash(spacetime generate --lang typescript --out-dir src/module_bindings -p server/spacetimedb -y)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Work\\.claude\\projects\\c--Users-Work-Desktop-GIT-AGARIO-agario"
     ]
   }
 }
