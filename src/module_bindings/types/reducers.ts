@@ -7,12 +7,22 @@ import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
 import DespawnPlayerReducer from "../despawn_player_reducer";
+import EatEjectedMassReducer from "../eat_ejected_mass_reducer";
 import EatFoodReducer from "../eat_food_reducer";
+import EatPlayerReducer from "../eat_player_reducer";
+import EjectMassReducer from "../eject_mass_reducer";
 import SpawnPlayerReducer from "../spawn_player_reducer";
+import SplitCellReducer from "../split_cell_reducer";
+import UpdateCellPositionReducer from "../update_cell_position_reducer";
 import UpdatePositionReducer from "../update_position_reducer";
 
 export type DespawnPlayerParams = __Infer<typeof DespawnPlayerReducer>;
+export type EatEjectedMassParams = __Infer<typeof EatEjectedMassReducer>;
 export type EatFoodParams = __Infer<typeof EatFoodReducer>;
+export type EatPlayerParams = __Infer<typeof EatPlayerReducer>;
+export type EjectMassParams = __Infer<typeof EjectMassReducer>;
 export type SpawnPlayerParams = __Infer<typeof SpawnPlayerReducer>;
+export type SplitCellParams = __Infer<typeof SplitCellReducer>;
+export type UpdateCellPositionParams = __Infer<typeof UpdateCellPositionReducer>;
 export type UpdatePositionParams = __Infer<typeof UpdatePositionReducer>;
 

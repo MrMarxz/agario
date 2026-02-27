@@ -35,21 +35,39 @@ import {
 
 // Import all reducer arg schemas
 import DespawnPlayerReducer from "./despawn_player_reducer";
+import EatEjectedMassReducer from "./eat_ejected_mass_reducer";
 import EatFoodReducer from "./eat_food_reducer";
+import EatPlayerReducer from "./eat_player_reducer";
+import EjectMassReducer from "./eject_mass_reducer";
 import SpawnPlayerReducer from "./spawn_player_reducer";
+import SplitCellReducer from "./split_cell_reducer";
+import UpdateCellPositionReducer from "./update_cell_position_reducer";
 import UpdatePositionReducer from "./update_position_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import EjectedMassRow from "./ejected_mass_table";
 import FoodPelletRow from "./food_pellet_table";
 import GameConfigRow from "./game_config_table";
 import PlayerRow from "./player_table";
+import PlayerCellRow from "./player_cell_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  ejected_mass: __table({
+    name: 'ejected_mass',
+    indexes: [
+      { name: 'id', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'ejected_mass_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, EjectedMassRow),
   food_pellet: __table({
     name: 'food_pellet',
     indexes: [
@@ -83,13 +101,29 @@ const tablesSchema = __schema({
       { name: 'player_identity_key', constraint: 'unique', columns: ['identity'] },
     ],
   }, PlayerRow),
+  player_cell: __table({
+    name: 'player_cell',
+    indexes: [
+      { name: 'cell_id', algorithm: 'btree', columns: [
+        'cellId',
+      ] },
+    ],
+    constraints: [
+      { name: 'player_cell_cell_id_key', constraint: 'unique', columns: ['cellId'] },
+    ],
+  }, PlayerCellRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("despawn_player", DespawnPlayerReducer),
+  __reducerSchema("eat_ejected_mass", EatEjectedMassReducer),
   __reducerSchema("eat_food", EatFoodReducer),
+  __reducerSchema("eat_player", EatPlayerReducer),
+  __reducerSchema("eject_mass", EjectMassReducer),
   __reducerSchema("spawn_player", SpawnPlayerReducer),
+  __reducerSchema("split_cell", SplitCellReducer),
+  __reducerSchema("update_cell_position", UpdateCellPositionReducer),
   __reducerSchema("update_position", UpdatePositionReducer),
 );
 

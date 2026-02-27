@@ -49,20 +49,28 @@ This file tracks the progress of each phase. Update the status of each phase as 
 ---
 
 ### Phase 3 — Core Game Mechanics
-**Status:** 🔲 Not Started
+**Status:** ✅ Complete (Opus Approved)
 
 **Goal:** Full Agar.io gameplay loop.
 
 **Scope:**
-- Player-eats-player logic (larger absorbs smaller on overlap)
-- Mass/size decay over time
-- Minimap showing all players
-- Live leaderboard (top 5 by size)
-- Eject mass mechanic (W key)
-- Cell split mechanic (Space key) — merges back after delay
-- Respawn flow after being eaten
 
-**Opus Audit:** 🔲 Pending
+- Player-eats-player logic (larger absorbs smaller on overlap) ✅
+- Mass/size decay over time ✅
+- Minimap showing all players ✅
+- Live leaderboard (top 5 by size) ✅
+- Eject mass mechanic (W key) ✅
+- Cell split mechanic (Space key) — merges back after delay ✅
+- Respawn flow after being eaten ✅
+
+**Post-Phase Bugfixes (Opus Approved):**
+
+- Camera no longer jumps on first join (deferred `startFollow` until server confirms spawn) ✅
+- Ejected mass spawns at circle surface instead of center for large blobs ✅
+- Ejected mass animation replaced with Phaser tween to server position (eliminates snap-back and self-eat bugs) ✅
+- In-flight ejected mass immune to collision via `ejectedAnimating` guard ✅
+
+**Opus Audit:** ✅ Approved
 
 ---
 

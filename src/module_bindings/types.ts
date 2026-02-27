@@ -10,6 +10,15 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const EjectedMass = __t.object("EjectedMass", {
+  id: __t.u64(),
+  x: __t.f32(),
+  y: __t.f32(),
+  radius: __t.f32(),
+  mass: __t.f32(),
+});
+export type EjectedMass = __Infer<typeof EjectedMass>;
+
 export const FoodPellet = __t.object("FoodPellet", {
   id: __t.u64(),
   x: __t.f32(),
@@ -26,6 +35,12 @@ export const GameConfig = __t.object("GameConfig", {
 });
 export type GameConfig = __Infer<typeof GameConfig>;
 
+export const MassDecaySchedule = __t.object("MassDecaySchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type MassDecaySchedule = __Infer<typeof MassDecaySchedule>;
+
 export const Player = __t.object("Player", {
   identity: __t.identity(),
   name: __t.string(),
@@ -36,4 +51,21 @@ export const Player = __t.object("Player", {
   color: __t.u32(),
 });
 export type Player = __Infer<typeof Player>;
+
+export const PlayerCell = __t.object("PlayerCell", {
+  cellId: __t.u64(),
+  playerIdentity: __t.identity(),
+  x: __t.f32(),
+  y: __t.f32(),
+  radius: __t.f32(),
+  mass: __t.f32(),
+});
+export type PlayerCell = __Infer<typeof PlayerCell>;
+
+export const SplitMergeSchedule = __t.object("SplitMergeSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  playerIdentity: __t.identity(),
+});
+export type SplitMergeSchedule = __Infer<typeof SplitMergeSchedule>;
 

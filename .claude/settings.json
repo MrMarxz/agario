@@ -45,7 +45,9 @@
       "Bash(spacetime publish -p ./spacetimedb agario -y)",
       "Bash(spacetime generate --lang typescript --out-dir src/module_bindings --project-path server/spacetimedb)",
       "Bash(spacetime generate --help)",
-      "Bash(spacetime generate --lang typescript --out-dir src/module_bindings -p server/spacetimedb -y)"
+      "Bash(spacetime generate --lang typescript --out-dir src/module_bindings -p server/spacetimedb -y)",
+      "WebFetch(domain:docs.spacetimedb.com)",
+      "Bash(spacetime publish -p ./spacetimedb agario -y --delete-data)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Work\\.claude\\projects\\c--Users-Work-Desktop-GIT-AGARIO-agario"
