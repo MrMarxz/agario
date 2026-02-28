@@ -133,7 +133,7 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
 // ---------------------------------------------------------------------------
 
 #[spacetimedb::reducer]
-pub fn spawn_player(ctx: &ReducerContext, name: String) {
+pub fn spawn_player(ctx: &ReducerContext, name: String, color: u32) {
     let identity = ctx.sender();
 
     // Remove any stale session data
@@ -144,11 +144,16 @@ pub fn spawn_player(ctx: &ReducerContext, name: String) {
     let x = rng.gen_range(100.0_f32..(WORLD_WIDTH - 100.0));
     let y = rng.gen_range(100.0_f32..(WORLD_HEIGHT - 100.0));
 
-    let colors: &[u32] = &[
-        0x4a90d9, 0xe74c3c, 0x2ecc71, 0xf39c12,
-        0x9b59b6, 0x1abc9c, 0xe91e63, 0x00bcd4,
-    ];
-    let color = colors[rng.gen_range(0..colors.len())];
+    // color == 0 means the client wants a random color assigned
+    let final_color = if color == 0 {
+        let colors: &[u32] = &[
+            0x4a90d9, 0xe74c3c, 0x2ecc71, 0xf39c12,
+            0x9b59b6, 0x1abc9c, 0xe91e63, 0x00bcd4,
+        ];
+        colors[rng.gen_range(0..colors.len())]
+    } else {
+        color
+    };
 
     ctx.db.player().insert(Player {
         identity,
@@ -157,7 +162,7 @@ pub fn spawn_player(ctx: &ReducerContext, name: String) {
         y,
         radius: mass_to_radius(INITIAL_MASS),
         mass: INITIAL_MASS,
-        color,
+        color: final_color,
     });
 }
 
@@ -262,6 +267,76 @@ pub fn eat_player(ctx: &ReducerContext, target_identity: Identity) {
         mass: new_mass,
         radius: mass_to_radius(new_mass),
         ..eater
+    });
+
+    ctx.db.player().identity().delete(target_identity);
+    delete_player_cells(ctx, target_identity);
+}
+
+/// Eat a food pellet using a split cell.
+/// Cell must belong to the caller; proximity is checked against the cell position.
+/// Mass is credited to the PlayerCell so it grows correctly before merging.
+#[spacetimedb::reducer]
+pub fn eat_food_cell(ctx: &ReducerContext, cell_id: u64, food_id: u64) {
+    let identity = ctx.sender();
+    let Some(cell) = ctx.db.player_cell().cell_id().find(cell_id) else { return; };
+    if cell.player_identity != identity { return; }
+    let Some(food) = ctx.db.food_pellet().id().find(food_id) else { return; };
+
+    let dx = food.x - cell.x;
+    let dy = food.y - cell.y;
+    let dist_sq = dx * dx + dy * dy;
+    let eat_dist = cell.radius + food.radius;
+    if dist_sq > (eat_dist * 2.0) * (eat_dist * 2.0) {
+        return;
+    }
+
+    ctx.db.food_pellet().id().delete(food_id);
+
+    let new_mass = cell.mass + 1.0;
+    ctx.db.player_cell().cell_id().update(PlayerCell {
+        mass: new_mass,
+        radius: mass_to_radius(new_mass),
+        ..cell
+    });
+
+    let mut rng = ctx.rng();
+    let new_x = rng.gen_range(20.0_f32..(WORLD_WIDTH - 20.0));
+    let new_y = rng.gen_range(20.0_f32..(WORLD_HEIGHT - 20.0));
+    ctx.db.food_pellet().insert(FoodPellet { id: 0, x: new_x, y: new_y, radius: FOOD_RADIUS });
+}
+
+/// Eat another player using a split cell.
+/// Cell must belong to the caller, be ≥10% heavier than the target, and overlapping.
+/// The target's entire mass (including any split cells) is absorbed into this cell.
+#[spacetimedb::reducer]
+pub fn eat_player_cell(ctx: &ReducerContext, cell_id: u64, target_identity: Identity) {
+    let eater_id = ctx.sender();
+    if eater_id == target_identity { return; }
+
+    let Some(cell) = ctx.db.player_cell().cell_id().find(cell_id) else { return; };
+    if cell.player_identity != eater_id { return; }
+
+    let Some(target) = ctx.db.player().identity().find(target_identity) else { return; };
+
+    if cell.mass < target.mass * 1.1 { return; }
+
+    let dx = cell.x - target.x;
+    let dy = cell.y - target.y;
+    let dist_sq = dx * dx + dy * dy;
+    if dist_sq > (cell.radius * 2.0) * (cell.radius * 2.0) { return; }
+
+    // Absorb target's split-cell mass too
+    let split_mass: f32 = ctx.db.player_cell().iter()
+        .filter(|c| c.player_identity == target_identity)
+        .map(|c| c.mass)
+        .sum();
+
+    let new_cell_mass = cell.mass + target.mass + split_mass;
+    ctx.db.player_cell().cell_id().update(PlayerCell {
+        mass: new_cell_mass,
+        radius: mass_to_radius(new_cell_mass),
+        ..cell
     });
 
     ctx.db.player().identity().delete(target_identity);

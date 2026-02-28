@@ -37,7 +37,9 @@ import {
 import DespawnPlayerReducer from "./despawn_player_reducer";
 import EatEjectedMassReducer from "./eat_ejected_mass_reducer";
 import EatFoodReducer from "./eat_food_reducer";
+import EatFoodCellReducer from "./eat_food_cell_reducer";
 import EatPlayerReducer from "./eat_player_reducer";
+import EatPlayerCellReducer from "./eat_player_cell_reducer";
 import EjectMassReducer from "./eject_mass_reducer";
 import SpawnPlayerReducer from "./spawn_player_reducer";
 import SplitCellReducer from "./split_cell_reducer";
@@ -119,7 +121,9 @@ const reducersSchema = __reducers(
   __reducerSchema("despawn_player", DespawnPlayerReducer),
   __reducerSchema("eat_ejected_mass", EatEjectedMassReducer),
   __reducerSchema("eat_food", EatFoodReducer),
+  __reducerSchema("eat_food_cell", EatFoodCellReducer),
   __reducerSchema("eat_player", EatPlayerReducer),
+  __reducerSchema("eat_player_cell", EatPlayerCellReducer),
   __reducerSchema("eject_mass", EjectMassReducer),
   __reducerSchema("spawn_player", SpawnPlayerReducer),
   __reducerSchema("split_cell", SplitCellReducer),

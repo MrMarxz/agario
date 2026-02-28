@@ -22,6 +22,10 @@ const EJECT_COOLDOWN_MS = 200;
 const SPLIT_COOLDOWN_MS = 500;
 const SPLIT_LAUNCH_SPEED = 700; // px/sec initial velocity for split half
 
+// Zoom constants
+const MIN_ZOOM = 0.3;
+const MAX_ZOOM = 1.0;
+
 // Minimap constants (bottom-right corner)
 const MMAP_SIZE = 160;
 const MMAP_PAD = 12;
@@ -30,6 +34,9 @@ const MMAP_PAD = 12;
 const LB_X = 12;
 const LB_Y = 12;
 const LB_WIDTH = 180;
+
+// Mobile button constants (bottom-center)
+const BTN_RADIUS = 38;
 
 function massToRadius(mass: number): number {
   return Math.sqrt(mass) * 2;
@@ -44,12 +51,14 @@ type PlayerGfx = {
 
 export class GameScene extends Phaser.Scene {
   private playerName = "Player";
+  private playerColor = 0; // 0 = server assigns random
 
   // Local player state (optimistic client-side prediction)
   private localX = WORLD_SIZE / 2;
   private localY = WORLD_SIZE / 2;
   private localMass = INITIAL_MASS;
   private localRadius = massToRadius(INITIAL_MASS);
+  private localPlayerColor = 0x4a90d9; // updated each frame from server
   private serverPositionInitialized = false;
 
   // Local player graphics
@@ -97,6 +106,12 @@ export class GameScene extends Phaser.Scene {
   private isEaten = false;
   private eatenOverlay!: Phaser.GameObjects.Container;
 
+  // Eating animation guard
+  private eatPulseActive = false;
+
+  // Mobile button: suppress movement for 100ms after button press
+  private lastButtonPressAt = 0;
+
   // Minimap HUD elements
   private minimapLocalDot!: Phaser.GameObjects.Arc;
   private minimapPlayerDots = new Map<string, Phaser.GameObjects.Arc>();
@@ -104,17 +119,24 @@ export class GameScene extends Phaser.Scene {
   // Leaderboard HUD text entries
   private lbEntries: Phaser.GameObjects.Text[] = [];
 
+  // All static HUD game objects — ignored by main camera, rendered by uiCamera
+  private hudObjects: Phaser.GameObjects.GameObject[] = [];
+  // Dedicated UI camera (zoom=1, large scroll offset) renders HUD at correct screen coords
+  private uiCamera!: Phaser.Cameras.Scene2D.Camera;
+
   constructor() {
     super({ key: "GameScene" });
   }
 
   init(data: object): void {
-    const d = data as Partial<{ playerName: string }>;
+    const d = data as Partial<{ playerName: string; playerColor: number }>;
     this.playerName = d.playerName ?? "Player";
+    this.playerColor = d.playerColor ?? 0;
     this.localX = WORLD_SIZE / 2;
     this.localY = WORLD_SIZE / 2;
     this.localMass = INITIAL_MASS;
     this.localRadius = massToRadius(INITIAL_MASS);
+    this.localPlayerColor = 0x4a90d9;
     this.remoteGfx = new Map();
     this.foodGfx = new Map();
     this.ejectedGfx = new Map();
@@ -124,8 +146,11 @@ export class GameScene extends Phaser.Scene {
     this.pendingPlayerEats = new Set();
     this.minimapPlayerDots = new Map();
     this.lbEntries = [];
+    this.hudObjects = [];
     this.serverPositionInitialized = false;
     this.isEaten = false;
+    this.eatPulseActive = false;
+    this.lastButtonPressAt = 0;
     this.splitCellId = null;
     this.splitClientX = 0;
     this.splitClientY = 0;
@@ -146,6 +171,19 @@ export class GameScene extends Phaser.Scene {
     this.createHUD();
 
     this.cameras.main.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
+    this.cameras.main.setZoom(MAX_ZOOM);
+
+    // Fix HUD to screen: main camera ignores HUD objects; a dedicated UI camera
+    // (zoom=1, scroll far outside the world) renders them at their true screen coords.
+    // setScrollFactor(0) prevents panning, but camera zoom still scales positions —
+    // the UI camera's constant zoom=1 keeps HUD elements the correct size and position.
+    this.cameras.main.ignore(this.hudObjects);
+    this.uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height);
+    this.uiCamera.setZoom(1);
+    // Scroll far outside the 3000×3000 world so world objects (scrollFactor=1) are
+    // off-screen on the uiCamera; HUD objects (scrollFactor=0) are unaffected by scroll.
+    this.uiCamera.setScroll(WORLD_SIZE * 2, WORLD_SIZE * 2);
+
     // startFollow is deferred until the server confirms our spawn position
     // to avoid the camera snapping across the world on first join.
 
@@ -182,6 +220,7 @@ export class GameScene extends Phaser.Scene {
     this.movePlayerTowardMouse(delta);
     this.updateSplitCells(delta);
     this.syncFromServer();
+    this.updateZoom(delta);
     this.checkFoodCollisions();
     this.checkEjectedMassCollisions();
     this.checkPlayerCollisions();
@@ -252,21 +291,23 @@ export class GameScene extends Phaser.Scene {
     const my = H - MMAP_SIZE - MMAP_PAD;
 
     // Dark background
-    this.add
+    const minimapBg = this.add
       .rectangle(mx + MMAP_SIZE / 2, my + MMAP_SIZE / 2, MMAP_SIZE, MMAP_SIZE, 0x0a0a1e, 0.8)
       .setScrollFactor(0)
       .setDepth(98);
+    this.hudObjects.push(minimapBg);
 
     // Border
-    this.add
+    const minimapBorder = this.add
       .rectangle(mx + MMAP_SIZE / 2, my + MMAP_SIZE / 2, MMAP_SIZE + 2, MMAP_SIZE + 2)
       .setScrollFactor(0)
       .setDepth(99)
       .setStrokeStyle(2, 0x888888)
       .setFillStyle(0, 0);
+    this.hudObjects.push(minimapBorder);
 
     // "MAP" label
-    this.add
+    const mapLabel = this.add
       .text(mx + MMAP_SIZE / 2, my - 2, "MAP", {
         fontSize: "10px",
         color: "#aaaaaa",
@@ -274,6 +315,7 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setScrollFactor(0)
       .setDepth(101);
+    this.hudObjects.push(mapLabel);
 
     // Local player dot (white, always on top)
     this.minimapLocalDot = this.add
@@ -281,16 +323,18 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(102)
       .setStrokeStyle(1, 0x000000);
+    this.hudObjects.push(this.minimapLocalDot);
 
     // --- Leaderboard (top-left) ---
     const lbHeight = 5 * 22 + 40;
-    this.add
+    const lbBg = this.add
       .rectangle(LB_X + LB_WIDTH / 2, LB_Y + lbHeight / 2, LB_WIDTH, lbHeight, 0x000000, 0.6)
       .setScrollFactor(0)
       .setDepth(98)
       .setStrokeStyle(1, 0x555555);
+    this.hudObjects.push(lbBg);
 
-    this.add
+    const lbTitle = this.add
       .text(LB_X + 8, LB_Y + 8, "LEADERBOARD", {
         fontSize: "12px",
         color: "#ffdd00",
@@ -298,6 +342,7 @@ export class GameScene extends Phaser.Scene {
       })
       .setScrollFactor(0)
       .setDepth(100);
+    this.hudObjects.push(lbTitle);
 
     for (let i = 0; i < 5; i++) {
       const entry = this.add
@@ -308,6 +353,7 @@ export class GameScene extends Phaser.Scene {
         .setScrollFactor(0)
         .setDepth(100);
       this.lbEntries.push(entry);
+      this.hudObjects.push(entry);
     }
 
     // --- Eaten overlay (centered) ---
@@ -337,6 +383,88 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(200)
       .setVisible(false);
+    // The container owns its children (they are removed from scene display list),
+    // so ignoring the container on the main camera is sufficient.
+    this.hudObjects.push(this.eatenOverlay);
+
+    // --- Mobile action buttons (bottom-center) ---
+    const btnY = H - BTN_RADIUS - 16;
+    const ejectX = W / 2 - BTN_RADIUS - 12;
+    const splitX = W / 2 + BTN_RADIUS + 12;
+
+    // Eject button (W)
+    const ejectBg = this.add
+      .circle(ejectX, btnY, BTN_RADIUS, 0x222244, 0.85)
+      .setScrollFactor(0)
+      .setDepth(150)
+      .setStrokeStyle(2, 0x6688cc)
+      .setInteractive({ useHandCursor: true });
+    this.hudObjects.push(ejectBg);
+
+    const ejectKeyText = this.add
+      .text(ejectX, btnY - 6, "W", {
+        fontSize: "18px",
+        color: "#aaccff",
+        fontStyle: "bold",
+      })
+      .setScrollFactor(0)
+      .setDepth(151)
+      .setOrigin(0.5);
+    this.hudObjects.push(ejectKeyText);
+
+    const ejectLabelText = this.add
+      .text(ejectX, btnY + 12, "Eject", {
+        fontSize: "10px",
+        color: "#8899bb",
+      })
+      .setScrollFactor(0)
+      .setDepth(151)
+      .setOrigin(0.5);
+    this.hudObjects.push(ejectLabelText);
+
+    ejectBg.on("pointerdown", () => {
+      this.lastButtonPressAt = this.time.now;
+      this.tryEjectMass();
+    });
+    ejectBg.on("pointerover", () => ejectBg.setFillStyle(0x334466, 0.95));
+    ejectBg.on("pointerout", () => ejectBg.setFillStyle(0x222244, 0.85));
+
+    // Split button (Space)
+    const splitBg = this.add
+      .circle(splitX, btnY, BTN_RADIUS, 0x222244, 0.85)
+      .setScrollFactor(0)
+      .setDepth(150)
+      .setStrokeStyle(2, 0x66cc88)
+      .setInteractive({ useHandCursor: true });
+    this.hudObjects.push(splitBg);
+
+    const splitKeyText = this.add
+      .text(splitX, btnY - 6, "SPC", {
+        fontSize: "14px",
+        color: "#aaffcc",
+        fontStyle: "bold",
+      })
+      .setScrollFactor(0)
+      .setDepth(151)
+      .setOrigin(0.5);
+    this.hudObjects.push(splitKeyText);
+
+    const splitLabelText = this.add
+      .text(splitX, btnY + 12, "Split", {
+        fontSize: "10px",
+        color: "#88bb99",
+      })
+      .setScrollFactor(0)
+      .setDepth(151)
+      .setOrigin(0.5);
+    this.hudObjects.push(splitLabelText);
+
+    splitBg.on("pointerdown", () => {
+      this.lastButtonPressAt = this.time.now;
+      this.trySplitCell();
+    });
+    splitBg.on("pointerover", () => splitBg.setFillStyle(0x334466, 0.95));
+    splitBg.on("pointerout", () => splitBg.setFillStyle(0x222244, 0.85));
   }
 
   // ---------------------------------------------------------------------------
@@ -345,6 +473,10 @@ export class GameScene extends Phaser.Scene {
 
   private movePlayerTowardMouse(delta: number): void {
     if (!this.serverPositionInitialized) return;
+    // Suppress movement briefly after a HUD button press so the button tap
+    // doesn't snap the movement direction toward the button's screen position.
+    if (this.time.now - this.lastButtonPressAt < 100) return;
+
     const pointer = this.input.activePointer;
     const worldX = pointer.worldX;
     const worldY = pointer.worldY;
@@ -479,10 +611,15 @@ export class GameScene extends Phaser.Scene {
           this.cameras.main.startFollow(this.localCircle, false, 0.1, 0.1);
         }
         if (serverPlayer.mass !== this.localMass) {
+          const massIncreased = serverPlayer.mass > this.localMass;
           this.localMass = serverPlayer.mass;
           this.localRadius = massToRadius(serverPlayer.mass);
           this.localCircle.setRadius(this.localRadius);
+          if (massIncreased) {
+            this.playEatPulse();
+          }
         }
+        this.localPlayerColor = serverPlayer.color;
         this.localCircle.setFillStyle(serverPlayer.color);
         this.localSplitCircle.setFillStyle(serverPlayer.color);
 
@@ -683,6 +820,80 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------------------
+  // Zoom scaling
+  // ---------------------------------------------------------------------------
+
+  private updateZoom(delta: number): void {
+    if (!this.serverPositionInitialized) return;
+    const targetZoom = Phaser.Math.Clamp(
+      Math.sqrt(INITIAL_MASS / this.localMass),
+      MIN_ZOOM,
+      MAX_ZOOM,
+    );
+    const currentZoom = this.cameras.main.zoom;
+    // Delta-based lerp: smooth but responsive (~3% per frame at 60fps)
+    const factor = 1 - Math.exp(-2 * (delta / 1000));
+    const newZoom = currentZoom + (targetZoom - currentZoom) * factor;
+    this.cameras.main.setZoom(newZoom);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Eating animation
+  // ---------------------------------------------------------------------------
+
+  private playEatPulse(): void {
+    if (this.eatPulseActive) return;
+    this.eatPulseActive = true;
+    this.tweens.add({
+      targets: this.localCircle,
+      scaleX: 1.18,
+      scaleY: 1.18,
+      duration: 80,
+      yoyo: true,
+      ease: "Sine.easeOut",
+      onComplete: () => {
+        this.eatPulseActive = false;
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Death burst animation
+  // ---------------------------------------------------------------------------
+
+  private showDeathBurst(): void {
+    const x = this.localCircle.x;
+    const y = this.localCircle.y;
+    const color = this.localPlayerColor;
+    const count = 12;
+
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      // Vary particle size slightly using deterministic offsets (no Math.random)
+      const size = 4 + (i % 3) * 2;
+      const dist = 50 + (i % 4) * 20;
+      const particle = this.add
+        .circle(x, y, size, color)
+        .setDepth(20)
+        .setAlpha(0.9);
+
+      this.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * dist,
+        y: y + Math.sin(angle) * dist,
+        alpha: 0,
+        scaleX: 0.1,
+        scaleY: 0.1,
+        duration: 450,
+        ease: "Power2",
+        onComplete: () => {
+          particle.destroy();
+        },
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Collision detection
   // ---------------------------------------------------------------------------
 
@@ -690,6 +901,7 @@ export class GameScene extends Phaser.Scene {
     const conn = getConnection();
     if (!conn) return;
 
+    // Main cell
     for (const [foodId, food] of foodMap) {
       if (pendingFoodEats.has(foodId)) continue;
       const dx = food.x - this.localX;
@@ -700,6 +912,29 @@ export class GameScene extends Phaser.Scene {
         void conn.reducers.eatFood({ foodId }).catch(() => {
           pendingFoodEats.delete(foodId);
         });
+      }
+    }
+
+    // Split cell — uses client-side position for responsive detection;
+    // server validates against its stored PlayerCell position.
+    const splitCellId = this.splitCellId;
+    if (splitCellId !== null) {
+      const cell = playerCellMap.get(splitCellId);
+      if (cell) {
+        for (const [foodId, food] of foodMap) {
+          if (pendingFoodEats.has(foodId)) continue;
+          const dx = food.x - this.splitClientX;
+          const dy = food.y - this.splitClientY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < cell.radius + FOOD_RADIUS) {
+            pendingFoodEats.add(foodId);
+            void conn.reducers
+              .eatFoodCell({ cellId: splitCellId, foodId })
+              .catch(() => {
+                pendingFoodEats.delete(foodId);
+              });
+          }
+        }
       }
     }
   }
@@ -735,6 +970,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Main cell
     for (const [identityHex, player] of playerMap) {
       if (identityHex === localIdentityHex) continue;
       if (this.pendingPlayerEats.has(identityHex)) continue;
@@ -755,6 +991,35 @@ export class GameScene extends Phaser.Scene {
           .catch(() => {
             this.pendingPlayerEats.delete(identityHex);
           });
+      }
+    }
+
+    // Split cell — uses client-side position for responsive detection;
+    // server validates against its stored PlayerCell position.
+    const splitCellId = this.splitCellId;
+    if (splitCellId !== null) {
+      const cell = playerCellMap.get(splitCellId);
+      if (cell) {
+        for (const [identityHex, player] of playerMap) {
+          if (identityHex === localIdentityHex) continue;
+          if (this.pendingPlayerEats.has(identityHex)) continue;
+          if (cell.mass < player.mass * 1.1) continue;
+
+          const dx = player.x - this.splitClientX;
+          const dy = player.y - this.splitClientY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < cell.radius) {
+            this.pendingPlayerEats.add(identityHex);
+            void conn.reducers
+              .eatPlayerCell({ cellId: splitCellId, targetIdentity: player.identity })
+              .then(() => {
+                this.pendingPlayerEats.delete(identityHex);
+              })
+              .catch(() => {
+                this.pendingPlayerEats.delete(identityHex);
+              });
+          }
+        }
       }
     }
   }
@@ -828,6 +1093,9 @@ export class GameScene extends Phaser.Scene {
   private handleEaten(): void {
     if (this.isEaten) return;
     this.isEaten = true;
+
+    // Show death burst at current position before hiding
+    this.showDeathBurst();
     this.eatenOverlay.setVisible(true);
 
     // Reset local visuals and split state
@@ -837,9 +1105,12 @@ export class GameScene extends Phaser.Scene {
     // Hide circle and name until the server confirms the new spawn position
     this.localCircle.setVisible(false);
     this.localNameText.setVisible(false);
+    this.tweens.killTweensOf(this.localCircle);
+    this.localCircle.setScale(1);
     this.tweens.killTweensOf(this.localSplitCircle);
     this.localSplitCircle.setVisible(false);
     this.pendingPlayerEats.clear();
+    this.eatPulseActive = false;
     this.splitCellId = null;
     this.splitLaunching = false;
     this.splitMerging = false;
@@ -862,12 +1133,14 @@ export class GameScene extends Phaser.Scene {
   private doRespawn(): void {
     this.isEaten = false;
     this.eatenOverlay.setVisible(false);
+    // Reset zoom to default before the new spawn position is confirmed
+    this.cameras.main.setZoom(MAX_ZOOM);
 
     const conn = getConnection();
     if (!conn) return;
 
     void conn.reducers
-      .spawnPlayer({ name: this.playerName })
+      .spawnPlayer({ name: this.playerName, color: this.playerColor })
       .catch((err: unknown) => {
         console.error("[GameScene] respawn failed:", err);
       });
@@ -907,6 +1180,9 @@ export class GameScene extends Phaser.Scene {
           .circle(dotX, dotY, 3, player.color)
           .setScrollFactor(0)
           .setDepth(102);
+        // Dynamic HUD object: exclude from main camera (which zooms) so it
+        // is only rendered by uiCamera at zoom=1 (correct screen position/size).
+        this.cameras.main.ignore(dot);
         this.minimapPlayerDots.set(identityHex, dot);
       }
     }

@@ -75,22 +75,29 @@ This file tracks the progress of each phase. Update the status of each phase as 
 ---
 
 ### Phase 4 — Polish & Shareability
-**Status:** 🔲 Not Started
+**Status:** ✅ Complete (Opus Approved)
 
 **Goal:** Fun, shareable game playable by friends via a URL.
 
 **Scope:**
-- Player name displayed above cell
-- Random cell color on spawn (or player picks)
-- Visual feedback: eating animation, death animation
-- Grid background (classic Agar.io look)
-- Zoom scaling as cell grows
-- Basic mobile touch support
-- Deploy frontend to Vercel
-- SpacetimeDB module confirmed live on Maincloud
-- Shareable URL — friends open link and play
+- Player name displayed above cell (fixed font size, doesn't scale with cell) ✅
+- Player picks color in lobby (8-color palette); server assigns random if 0 passed ✅
+- Eating animation: scale pulse (1.18×) on local cell when mass increases ✅
+- Death animation: 12-particle burst at death position before cell hides ✅
+- Grid background (classic Agar.io look) ✅ (was already done in Phase 1)
+- Zoom scaling: camera smoothly zooms out as cell grows (sqrt formula, 0.3–1.0) ✅
+- Mobile touch support: movement via touch-pointer (already worked); on-screen Eject (W) and Split (Space) buttons added to HUD ✅
+- Deploy frontend to Vercel: NEXT_PUBLIC_SPACETIMEDB_URL env var wired up; documented in .env.example ✅
+- SpacetimeDB module confirmed live on Maincloud (published with color param) ✅
+- Shareable URL: game fully playable by opening the Vercel URL in any browser ✅
 
-**Opus Audit:** 🔲 Pending
+**Opus Audit:** ✅ Approved
+
+**Post-Phase Bugfixes (Opus Approved):**
+
+- Split cell can now eat food pellets via `eat_food_cell` reducer (server checks PlayerCell position; mass credited to PlayerCell so it grows before merge) ✅
+- Split cell can now eat smaller players via `eat_player_cell` reducer (server checks PlayerCell position and mass; absorbs target into the split cell) ✅
+- HUD elements (minimap, leaderboard, buttons, overlay) no longer scale or shift position with camera zoom: a dedicated `uiCamera` (zoom=1, large scroll offset) renders all HUD objects while the main camera ignores them ✅
 
 ---
 

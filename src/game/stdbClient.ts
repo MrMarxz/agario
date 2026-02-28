@@ -47,7 +47,10 @@ export function clearOnCellDeletedCallback(): void {
   _onCellDeletedCallback = null;
 }
 
-export function connectToSpacetimeDB(playerName: string): DbConnection {
+const STDB_URL =
+  process.env.NEXT_PUBLIC_SPACETIMEDB_URL ?? "https://maincloud.spacetimedb.com";
+
+export function connectToSpacetimeDB(playerName: string, playerColor: number): DbConnection {
   const myGen = ++_generation;
 
   const savedToken =
@@ -56,7 +59,7 @@ export function connectToSpacetimeDB(playerName: string): DbConnection {
       : undefined;
 
   const conn = DbConnection.builder()
-    .withUri("https://maincloud.spacetimedb.com")
+    .withUri(STDB_URL)
     .withDatabaseName("agario")
     .withToken(savedToken)
     .onConnect((connection, identity, token) => {
@@ -70,7 +73,7 @@ export function connectToSpacetimeDB(playerName: string): DbConnection {
         .onApplied(() => {
           if (myGen !== _generation) return;
           console.log("[SpacetimeDB] Subscription applied — spawning player");
-          void connection.reducers.spawnPlayer({ name: playerName }).catch((err: unknown) => {
+          void connection.reducers.spawnPlayer({ name: playerName, color: playerColor }).catch((err: unknown) => {
             console.error("[SpacetimeDB] spawnPlayer failed:", err);
           });
         })

@@ -16,7 +16,10 @@ const GameCanvas = dynamic(() => import("@/components/GameCanvas"), {
 function GameContent() {
   const searchParams = useSearchParams();
   const playerName = searchParams.get("name") ?? "Player";
-  return <GameCanvas playerName={playerName} />;
+  const colorStr = searchParams.get("color") ?? "0";
+  const parsed = parseInt(colorStr, 16);
+  const playerColor = isNaN(parsed) ? 0 : parsed;
+  return <GameCanvas playerName={playerName} playerColor={playerColor} />;
 }
 
 export default function GamePage() {

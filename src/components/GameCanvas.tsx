@@ -6,9 +6,10 @@ import { connectToSpacetimeDB, cleanupSpacetimeDB } from "@/game/stdbClient";
 
 type GameCanvasProps = {
   playerName: string;
+  playerColor: number;
 };
 
-export default function GameCanvas({ playerName }: GameCanvasProps) {
+export default function GameCanvas({ playerName, playerColor }: GameCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -17,7 +18,7 @@ export default function GameCanvas({ playerName }: GameCanvasProps) {
 
     const initGame = async () => {
       try {
-        connectToSpacetimeDB(playerName);
+        connectToSpacetimeDB(playerName, playerColor);
 
         const Phaser = (await import("phaser")).default;
         if (cancelled) return;
@@ -41,7 +42,7 @@ export default function GameCanvas({ playerName }: GameCanvasProps) {
             game = null;
             return;
           }
-          game?.scene.add("GameScene", GameScene, true, { playerName });
+          game?.scene.add("GameScene", GameScene, true, { playerName, playerColor });
         });
       } catch (err: unknown) {
         console.error("[GameCanvas] Failed to initialize game:", err);
@@ -56,7 +57,7 @@ export default function GameCanvas({ playerName }: GameCanvasProps) {
       game?.destroy(true);
       game = null;
     };
-  }, [playerName]);
+  }, [playerName, playerColor]);
 
   return (
     <div ref={containerRef} className="h-screen w-screen overflow-hidden" />
