@@ -336,7 +336,7 @@ pub fn eject_mass(ctx: &ReducerContext, dir_x: f32, dir_y: f32) {
     let nx = dir_x / len;
     let ny = dir_y / len;
 
-    let eject_dist = player.radius + 30.0;
+    let eject_dist = 300.0_f32;
     let ej_x = (player.x + nx * eject_dist).clamp(20.0, WORLD_WIDTH - 20.0);
     let ej_y = (player.y + ny * eject_dist).clamp(20.0, WORLD_HEIGHT - 20.0);
 
